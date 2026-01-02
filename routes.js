@@ -5,6 +5,7 @@ const { findLinkedUserByDiscordId, linkDiscordToIdentifier } = require("../../mo
 
 const config_website = require("../../../configuration/website.json");
 const config_module = require("../../../configuration/modules.json");
+const config_logs = require("../../../configuration/logs.json");
 const config_fivem = require("../../../configuration/fivem.json");
 const config_bot = require("../../../configuration/bot.json");
 const { getDiscordClient } = require("../../../src/discord/client");
@@ -139,7 +140,6 @@ module.exports = (ctx) => {
         : (parts[0][0] + parts[1][0]).toUpperCase();
     const onlineCount = await getOnlinePlayersCount();
 
-
     if (!req.user) {
       return res.redirect("/connexion/auth");
     }
@@ -154,21 +154,10 @@ module.exports = (ctx) => {
         const discordClient = getDiscordClient();
         discordUser = await discordClient.users.fetch(req.user.discord_id, { force: true });
       } catch (e) {
-        const errorMessages = [
-          {
-            type: "error",
-            text: res.locals.t("linked.var12")
-          }
-        ];
-
-        return res.status(404).render("404", {
-          errorMessages,
-          showDocsButton: false,
-          showHomeButton: true
-        });
+        console.log(e)
       }
     }
-  
+
     res.render("linked", {
       req,
       toast: null,
@@ -187,6 +176,16 @@ module.exports = (ctx) => {
   router.post("/linked", async (req, res) => {
     try {
       if (!req.user?.discord_id) return res.redirect("/connexion");
+
+      let discordUser = null;
+      if (req.user) {
+        try {
+          const discordClient = getDiscordClient();
+          discordUser = await discordClient.users.fetch(req.user.discord_id, { force: true });
+        } catch (e) {
+          console.log(e)
+        }
+      }
 
       const fivemId = String(req.body?.fivem_id || "").trim();
 
@@ -225,9 +224,43 @@ module.exports = (ctx) => {
         return res.redirect("/connexion/linked");
       }
 
+      if (config_module.modules.logs) {
+        if (config_logs.logs.module_logs.link) {
+          ctx.fileLogs?.info?.(
+            `L'utilisateur **${discordUser.username}** vient d'associer son compte`
+          );
+
+          if (ctx.webhooksReady) {
+            try {
+              const ready = await ctx.webhooksReady;
+              if (ready && ctx.webhooks?.login?.send) {
+                await ctx.webhooks.login.send({
+                  embeds: [
+                    {
+                      description: `L'utilisateur **${discordUser.username}** vient d'associer son compte`,
+                      color: 0x57f287,
+                    },
+                  ],
+                });
+              }
+            } catch (e) {
+              const msg =
+                e?.message ||
+                (() => {
+                  try {
+                    return JSON.stringify(e);
+                  } catch {
+                    return String(e);
+                  }
+                })();
+              ctx.logger?.warn?.(`[login] webhook erreur: ${msg}`);
+            }
+          }
+        }
+      }
+
       res.toast("success", `${res.locals.t("linked.var18")}`);
       return res.redirect("/?delayRedirect=1");
-      
     } catch (e) {
       res.toast("error", res.locals.t("linked.var19", { err: e }));
     }
@@ -247,34 +280,36 @@ module.exports = (ctx) => {
       };
 
       if (config_module.modules.logs) {
-        ctx.fileLogs?.info?.(
-          `✅ Connexion ${req.user?.username || "unknown"} (${req.user?.discord_id || "?"})`
-        );
+        if (config_logs.logs.module_logs.login) {
+          ctx.fileLogs?.info?.(
+            `✅ Connexion ${req.user?.username || "unknown"} (${req.user?.discord_id || "?"})`
+          );
 
-        if (ctx.webhooksReady) {
-          try {
-            const ready = await ctx.webhooksReady;
-            if (ready && ctx.webhooks?.login?.send) {
-              await ctx.webhooks.login.send({
-                embeds: [
-                  {
-                    description: `Connexion de l'utilisateur \`${req.user?.username || "unknown"}\` (\`${req.user?.discord_id || "?"}\`)`,
-                    color: 0x57f287,
-                  },
-                ],
-              });
+          if (ctx.webhooksReady) {
+            try {
+              const ready = await ctx.webhooksReady;
+              if (ready && ctx.webhooks?.login?.send) {
+                await ctx.webhooks.login.send({
+                  embeds: [
+                    {
+                      description: `Connexion de l'utilisateur \`${req.user?.username || "unknown"}\` (\`${req.user?.discord_id || "?"}\`)`,
+                      color: 0x57f287,
+                    },
+                  ],
+                });
+              }
+            } catch (e) {
+              const msg =
+                e?.message ||
+                (() => {
+                  try {
+                    return JSON.stringify(e);
+                  } catch {
+                    return String(e);
+                  }
+                })();
+              ctx.logger?.warn?.(`[login] webhook erreur: ${msg}`);
             }
-          } catch (e) {
-            const msg =
-              e?.message ||
-              (() => {
-                try {
-                  return JSON.stringify(e);
-                } catch {
-                  return String(e);
-                }
-              })();
-            ctx.logger?.warn?.(`[login] webhook erreur: ${msg}`);
           }
         }
       }
