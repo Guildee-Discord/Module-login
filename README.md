@@ -1,0 +1,1 @@
+This module adds a /login page to your website, providing a fully customizable interface for Discord authentication and user connection management.
